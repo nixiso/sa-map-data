@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>South Africa Municipal Map</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="app-header">
+        <h1>South Africa — Local Municipalities</h1>
+        <p id="provenance">
+          Municipal boundary data: Municipal Demarcation Board / South African
+          government GIS data. Independent prototype, not an official
+          government application.
+        </p>
+      </header>
+      <main id="app-main">
+        <div id="map"></div>
+        <div id="plugins">
+          <h2>Plugins</h2>
+          <div id="plugins-list"></div>
+        </div>
+        <aside id="panel" hidden></aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
