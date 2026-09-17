@@ -103,7 +103,9 @@ The map supports small, independently-written "plugins" (`src/plugins/`)
 that can be toggled on/off, each with their own config UI and (optionally)
 their own section in the municipality info panel. Only one "coloring"
 plugin (one that recolors municipalities) can be active at a time — the
-plugin manager (`src/plugins/core.ts`) enforces this automatically.
+plugin manager (`src/plugins/core.ts`) enforces this automatically. See
+[PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for how to write and register a new
+one.
 
 **Highlight province** — greys out every municipality outside the
 selected province(s), sourced from `data/provinces.geojson`.
