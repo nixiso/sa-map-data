@@ -25,6 +25,17 @@ https://dffeportal.environment.gov.za/hosting/rest/services/MDB_Boundaries/Provi
 This is an independent prototype using public government geographic data.
 It is not an official government application.
 
+Municipal budget figures (used by the "Staff cost ratio" plugin) are
+fetched live, at plugin-activation time, from National Treasury's
+Municipal Money API:
+
+https://municipaldata.treasury.gov.za/api/cubes/incexp_v2
+
+Unlike the boundary geometry, this data is not bundled locally — it's
+public, CORS-enabled, and updated quarterly by Treasury, so the plugin
+always reflects the current published figures rather than a static
+snapshot.
+
 ## Running locally
 
 ```bash
@@ -85,3 +96,34 @@ https://dffeportal.environment.gov.za/hosting/rest/services/MDB_Boundaries/Provi
 
 The same generalization tolerance was used for consistency with the
 municipal boundaries (full resolution was ~2.8 MB for a single province).
+
+## Plugins
+
+The map supports small, independently-written "plugins" (`src/plugins/`)
+that can be toggled on/off, each with their own config UI and (optionally)
+their own section in the municipality info panel. Only one "coloring"
+plugin (one that recolors municipalities) can be active at a time — the
+plugin manager (`src/plugins/core.ts`) enforces this automatically.
+
+**Highlight province** — greys out every municipality outside the
+selected province(s), sourced from `data/provinces.geojson`.
+
+**Staff cost ratio** — colors municipalities by employee-related costs as
+a share of total operating expenditure, using National Treasury's FY2025
+Original Budget figures (`src/plugins/budget.ts`). Treasury's API stores
+budget "Total Expenditure" as a set of underlying line items rather than a
+single fact row, so the plugin sums the relevant mSCOA item codes itself
+(see the comments in that file for the specifics). Color thresholds are
+fixed in code, not user-configurable.
+
+**Budget vs actual** — colors municipalities by how far actual spending
+deviated from the Original Budget for a selected year, and lists the
+municipality's 3 biggest line-item deviations in the info panel
+(`src/plugins/budget-vs-actual.ts`). Its config box toggles which
+"actual" figure to compare against (Audited Actual, Pre-audit, or
+Restructured Audit — Treasury's `ACT`, in-year actual, turned out to have
+no data at all in this cube), and a year slider in a bottom bar (the
+first plugin-contributed UI outside the checkbox+config box, via the
+optional `renderControls` hook) picks the financial year. Both fetches
+race-guard against the slider being dragged again before the previous
+request resolves.

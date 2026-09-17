@@ -14,6 +14,10 @@ export interface MapPlugin {
   /** Optional: inject a section into the municipality info panel, right
    * under the identity header, while this plugin is active. */
   renderPanel?(container: HTMLElement, properties: Record<string, unknown>): void;
+  /** Optional: render into the shared bottom controls bar while this
+   * plugin is active (e.g. a year slider). Only one plugin owns the bar
+   * at a time — whichever is currently active with this defined. */
+  renderControls?(container: HTMLElement): void;
 }
 
 export class PluginManager {
@@ -21,13 +25,18 @@ export class PluginManager {
   private active = new Set<string>();
   private checkboxes = new Map<string, HTMLInputElement>();
   private configContainers = new Map<string, HTMLElement>();
+  private controlsContainer: HTMLElement | null = null;
+  private controlsOwnerId: string | null = null;
 
   register(plugin: MapPlugin): void {
     this.plugins.push(plugin);
   }
 
-  /** Builds the plugin checkbox list into `root`. */
-  mount(root: HTMLElement): void {
+  /** Builds the plugin checkbox list into `root`. `controlsRoot`, if
+   * given, becomes the shared bottom bar plugins can render controls
+   * into (e.g. a year slider) while active. */
+  mount(root: HTMLElement, controlsRoot?: HTMLElement): void {
+    this.controlsContainer = controlsRoot ?? null;
     const list = document.createElement("ul");
     list.className = "plugin-list";
 
@@ -76,6 +85,13 @@ export class PluginManager {
       plugin.renderConfig(config);
       config.hidden = false;
     }
+
+    if (plugin.renderControls && this.controlsContainer) {
+      this.controlsContainer.innerHTML = "";
+      plugin.renderControls(this.controlsContainer);
+      this.controlsContainer.hidden = false;
+      this.controlsOwnerId = plugin.id;
+    }
   }
 
   private deactivate(plugin: MapPlugin): void {
@@ -89,6 +105,12 @@ export class PluginManager {
     if (config) {
       config.hidden = true;
       config.innerHTML = "";
+    }
+
+    if (this.controlsOwnerId === plugin.id && this.controlsContainer) {
+      this.controlsContainer.hidden = true;
+      this.controlsContainer.innerHTML = "";
+      this.controlsOwnerId = null;
     }
   }
 
@@ -106,53 +128,4 @@ export class PluginManager {
     }
     return sections;
   }
-}
-
-export interface ProvinceOption {
-  code: string;
-  name: string;
-}
-
-export function createProvinceHighlightPlugin(
-  provinces: ProvinceOption[],
-  setHighlight: (codes: string[] | null) => void,
-): MapPlugin {
-  const selected = new Set<string>();
-
-  function apply() {
-    setHighlight(selected.size > 0 ? Array.from(selected) : null);
-  }
-
-  return {
-    id: "province-highlight",
-    name: "Highlight province",
-    category: "coloring",
-    onActivate: apply,
-    onDeactivate() {
-      selected.clear();
-      setHighlight(null);
-    },
-    renderConfig(container) {
-      const list = document.createElement("ul");
-      list.className = "plugin-province-list";
-
-      for (const province of provinces) {
-        const item = document.createElement("li");
-        const label = document.createElement("label");
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = selected.has(province.code);
-        checkbox.addEventListener("change", () => {
-          if (checkbox.checked) selected.add(province.code);
-          else selected.delete(province.code);
-          apply();
-        });
-        label.append(checkbox, document.createTextNode(` ${province.name}`));
-        item.append(label);
-        list.append(item);
-      }
-
-      container.append(list);
-    },
-  };
 }

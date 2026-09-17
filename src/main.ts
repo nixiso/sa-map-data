@@ -9,8 +9,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 import municipalitiesUrl from "../data/municipalities.geojson?url";
 import provincesUrl from "../data/provinces.geojson?url";
-import type { FeatureCollection } from "geojson";
-import { PluginManager, createProvinceHighlightPlugin } from "./plugins";
+import type { Feature, FeatureCollection } from "geojson";
+import {
+  PluginManager,
+  createProvinceHighlightPlugin,
+  createBudgetPlugin,
+  createBudgetVsActualPlugin,
+} from "./plugins";
+import { getMunicipalityCode, getMunicipalityName, getMunicipalityProvince } from "./municipality";
 
 const SOURCE_ID = "municipalities";
 const FILL_LAYER_ID = "municipalities-fill";
@@ -25,6 +31,7 @@ const GREYED_OUT_COLOR = "#c7c7c1";
 
 const panel = document.getElementById("panel") as HTMLElement;
 const pluginsList = document.getElementById("plugins-list") as HTMLElement;
+const pluginControls = document.getElementById("plugin-controls") as HTMLElement;
 const pluginManager = new PluginManager();
 
 // Simple raster basemap so the MVP doesn't depend on a vector-tile provider
@@ -60,8 +67,13 @@ map.addControl(new NavigationControl(), "top-right");
 
 let selectedFeatureId: number | string | undefined;
 let hoveredFeatureId: number | string | undefined;
+let municipalityFeatures: Feature[] = [];
 
-function buildFillColorExpr(highlightCodes: string[] | null): ExpressionSpecification {
+// Generic contract every coloring plugin uses: a map of official
+// municipality code -> fill color, or null to clear back to the default
+// look. Selected/hover feature-state always takes priority over whatever
+// a plugin assigns.
+function buildFillColorExpr(colorByCode: Map<string, string> | null): ExpressionSpecification {
   const base: unknown[] = [
     "case",
     ["boolean", ["feature-state", "selected"], false],
@@ -69,31 +81,57 @@ function buildFillColorExpr(highlightCodes: string[] | null): ExpressionSpecific
     ["boolean", ["feature-state", "hover"], false],
     HOVER_COLOR,
   ];
-  if (highlightCodes) {
-    base.push(["in", ["get", "PROVINCE"], ["literal", highlightCodes]], BASE_COLOR);
+  if (colorByCode && colorByCode.size > 0) {
+    // Style expressions run against the raw GeoJSON, so the source's
+    // actual code field ("CAT_B") is used directly here rather than the
+    // JS-side candidate-list lookup used elsewhere for display purposes.
+    const match: unknown[] = ["match", ["get", "CAT_B"]];
+    for (const [code, color] of colorByCode) {
+      match.push(code, color);
+    }
+    match.push(GREYED_OUT_COLOR);
+    base.push(match);
+  } else {
+    base.push(BASE_COLOR);
   }
-  base.push(highlightCodes ? GREYED_OUT_COLOR : BASE_COLOR);
   return base as unknown as ExpressionSpecification;
 }
 
-function buildFillOpacityExpr(highlightCodes: string[] | null): ExpressionSpecification {
-  const base: unknown[] = [
+function buildFillOpacityExpr(colorByCode: Map<string, string> | null): ExpressionSpecification {
+  return [
     "case",
     ["boolean", ["feature-state", "selected"], false],
-    0.55,
+    0.65,
     ["boolean", ["feature-state", "hover"], false],
-    0.4,
-  ];
-  if (highlightCodes) {
-    base.push(["in", ["get", "PROVINCE"], ["literal", highlightCodes]], 0.25);
-  }
-  base.push(highlightCodes ? 0.15 : 0.25);
-  return base as unknown as ExpressionSpecification;
+    0.5,
+    colorByCode && colorByCode.size > 0 ? 0.4 : 0.25,
+  ] as unknown as ExpressionSpecification;
 }
 
-function applyHighlight(highlightCodes: string[] | null) {
-  map.setPaintProperty(FILL_LAYER_ID, "fill-color", buildFillColorExpr(highlightCodes));
-  map.setPaintProperty(FILL_LAYER_ID, "fill-opacity", buildFillOpacityExpr(highlightCodes));
+function applyColorOverride(colorByCode: Map<string, string> | null) {
+  map.setPaintProperty(FILL_LAYER_ID, "fill-color", buildFillColorExpr(colorByCode));
+  map.setPaintProperty(FILL_LAYER_ID, "fill-opacity", buildFillOpacityExpr(colorByCode));
+}
+
+// Province-highlight plugin only knows province codes; translate that into
+// the generic per-municipality color map every coloring plugin produces.
+function applyProvinceHighlight(highlightProvinceCodes: string[] | null) {
+  if (!highlightProvinceCodes) {
+    applyColorOverride(null);
+    return;
+  }
+  const colorByCode = new Map<string, string>();
+  for (const feature of municipalityFeatures) {
+    const props = feature.properties ?? {};
+    const code = getMunicipalityCode(props);
+    const province = getMunicipalityProvince(props);
+    if (!code) continue;
+    colorByCode.set(
+      code,
+      province && highlightProvinceCodes.includes(province) ? BASE_COLOR : GREYED_OUT_COLOR,
+    );
+  }
+  applyColorOverride(colorByCode);
 }
 
 map.on("load", async () => {
@@ -111,6 +149,8 @@ map.on("load", async () => {
     );
     return;
   }
+
+  municipalityFeatures = geojson.features;
 
   map.addSource(SOURCE_ID, {
     type: "geojson",
@@ -143,6 +183,11 @@ map.on("load", async () => {
     },
   });
 
+  pluginManager.register(createBudgetPlugin((colorByCode) => applyColorOverride(colorByCode)));
+  pluginManager.register(
+    createBudgetVsActualPlugin((colorByCode) => applyColorOverride(colorByCode)),
+  );
+
   try {
     const res = await fetch(provincesUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -172,12 +217,9 @@ map.on("load", async () => {
       .filter((p) => p.code)
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const provinceHighlightPlugin = createProvinceHighlightPlugin(
-      provinceOptions,
-      (codes) => applyHighlight(codes),
+    pluginManager.register(
+      createProvinceHighlightPlugin(provinceOptions, (codes) => applyProvinceHighlight(codes)),
     );
-    pluginManager.register(provinceHighlightPlugin);
-    pluginManager.mount(pluginsList);
   } catch (err) {
     console.warn(
       `Could not load province boundaries from data/provinces.geojson (${
@@ -185,6 +227,8 @@ map.on("load", async () => {
       }). Continuing without provincial outlines.`,
     );
   }
+
+  pluginManager.mount(pluginsList, pluginControls);
 
   map.on("mousemove", FILL_LAYER_ID, (e) => {
     if (!e.features || e.features.length === 0) return;
@@ -242,26 +286,10 @@ function clearSelection() {
   panel.innerHTML = "";
 }
 
-const NAME_FIELDS = ["MUNICNAME", "MunicName", "LOCAL_MUNI", "NAME", "name"];
-const CODE_FIELDS = ["MUNICCODE", "MunicCode", "CAT_B", "CODE", "code"];
-const PROVINCE_FIELDS = ["PROVINCE", "Province", "PROVNAME", "province"];
-
-function firstPresent(
-  props: Record<string, unknown>,
-  candidates: string[],
-): string | undefined {
-  for (const key of candidates) {
-    if (props[key] !== undefined && props[key] !== null && props[key] !== "") {
-      return String(props[key]);
-    }
-  }
-  return undefined;
-}
-
 function renderPanel(props: Record<string, unknown>) {
-  const name = firstPresent(props, NAME_FIELDS) ?? "Unnamed municipality";
-  const code = firstPresent(props, CODE_FIELDS);
-  const province = firstPresent(props, PROVINCE_FIELDS);
+  const name = getMunicipalityName(props) ?? "Unnamed municipality";
+  const code = getMunicipalityCode(props);
+  const province = getMunicipalityProvince(props);
 
   const identityRows: string[] = [];
   if (code) {
