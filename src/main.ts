@@ -185,7 +185,10 @@ map.on("load", async () => {
 
   pluginManager.register(createBudgetPlugin((colorByCode) => applyColorOverride(colorByCode)));
   pluginManager.register(
-    createBudgetVsActualPlugin((colorByCode) => applyColorOverride(colorByCode)),
+    createBudgetVsActualPlugin(
+      (colorByCode) => applyColorOverride(colorByCode),
+      refreshSelectedPanel,
+    ),
   );
 
   try {
@@ -268,13 +271,16 @@ map.on("load", async () => {
   });
 });
 
+let selectedProperties: Record<string, unknown> | null = null;
+
 function selectFeature(feature: MapGeoJSONFeature) {
   if (selectedFeatureId !== undefined) {
     map.setFeatureState({ source: SOURCE_ID, id: selectedFeatureId }, { selected: false });
   }
   selectedFeatureId = feature.id;
   map.setFeatureState({ source: SOURCE_ID, id: selectedFeatureId }, { selected: true });
-  renderPanel(feature.properties ?? {});
+  selectedProperties = feature.properties ?? {};
+  renderPanel(selectedProperties);
 }
 
 function clearSelection() {
@@ -282,8 +288,17 @@ function clearSelection() {
     map.setFeatureState({ source: SOURCE_ID, id: selectedFeatureId }, { selected: false });
   }
   selectedFeatureId = undefined;
+  selectedProperties = null;
   panel.hidden = true;
   panel.innerHTML = "";
+}
+
+// Lets a plugin ask for the currently-open panel to be redrawn after its
+// own data changes (e.g. the budget-vs-actual year slider) — otherwise an
+// already-open panel keeps showing whatever was true at the moment it was
+// selected, even though the map/legend have moved on.
+function refreshSelectedPanel() {
+  if (selectedProperties) renderPanel(selectedProperties);
 }
 
 function renderPanel(props: Record<string, unknown>) {
@@ -313,25 +328,30 @@ function renderPanel(props: Record<string, unknown>) {
     panel.append(section);
   }
 
-  const attrRows = Object.entries(props)
-    .map(
-      ([key, value]) =>
-        `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(String(value ?? ""))}</td></tr>`,
-    )
-    .join("");
+  // Attributes/Raw JSON are the underlying source data — useful on their
+  // own, but redundant clutter once a plugin is showing its own take on
+  // the same municipality.
+  if (!pluginManager.hasActivePlugin()) {
+    const attrRows = Object.entries(props)
+      .map(
+        ([key, value]) =>
+          `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(String(value ?? ""))}</td></tr>`,
+      )
+      .join("");
 
-  const rest = document.createElement("div");
-  rest.innerHTML = `
-    <section>
-      <h3>Attributes</h3>
-      <table class="attr-table"><tbody>${attrRows}</tbody></table>
-    </section>
-    <section>
-      <h3>Raw JSON</h3>
-      <pre>${escapeHtml(JSON.stringify(props, null, 2))}</pre>
-    </section>
-  `;
-  while (rest.firstChild) panel.append(rest.firstChild);
+    const rest = document.createElement("div");
+    rest.innerHTML = `
+      <section>
+        <h3>Attributes</h3>
+        <table class="attr-table"><tbody>${attrRows}</tbody></table>
+      </section>
+      <section>
+        <h3>Raw JSON</h3>
+        <pre>${escapeHtml(JSON.stringify(props, null, 2))}</pre>
+      </section>
+    `;
+    while (rest.firstChild) panel.append(rest.firstChild);
+  }
 
   panel.hidden = false;
 }

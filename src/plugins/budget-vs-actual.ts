@@ -160,6 +160,7 @@ function computeComparisons(
 
 export function createBudgetVsActualPlugin(
   setColors: (colorByCode: Map<string, string> | null) => void,
+  refreshPanel: () => void,
 ): MapPlugin {
   let year = MAX_YEAR;
   let actualType = ACTUAL_TYPES[0].code;
@@ -268,6 +269,7 @@ export function createBudgetVsActualPlugin(
           forceReload(() => {
             render();
             applyColors();
+            refreshPanel();
           });
           render();
         });
@@ -335,6 +337,7 @@ export function createBudgetVsActualPlugin(
         forceReload(() => {
           renderConfigNow?.();
           applyColors();
+          refreshPanel();
         });
       });
 
@@ -401,6 +404,43 @@ export function createBudgetVsActualPlugin(
         list.append(li);
       }
       container.append(list);
+
+      const actualLabel = ACTUAL_TYPES.find((opt) => opt.code === actualType)?.label ?? actualType;
+
+      const tableHeading = document.createElement("h4");
+      tableHeading.textContent = "All line items";
+      container.append(tableHeading);
+
+      const table = document.createElement("table");
+      table.className = "line-item-table";
+
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const text of ["Item", "Budget", actualLabel]) {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headRow.append(th);
+      }
+      thead.append(headRow);
+      table.append(thead);
+
+      const tbody = document.createElement("tbody");
+      for (const itemCode of Object.keys(ITEM_LABELS)) {
+        const budgetAmount = cmp.budget.items[itemCode] ?? 0;
+        const actualAmount = cmp.actual.items[itemCode] ?? 0;
+
+        const row = document.createElement("tr");
+        const nameCell = document.createElement("td");
+        nameCell.textContent = ITEM_LABELS[itemCode];
+        const budgetCell = document.createElement("td");
+        budgetCell.textContent = formatRand(budgetAmount);
+        const actualCell = document.createElement("td");
+        actualCell.textContent = formatRand(actualAmount);
+        row.append(nameCell, budgetCell, actualCell);
+        tbody.append(row);
+      }
+      table.append(tbody);
+      container.append(table);
     },
   };
 }

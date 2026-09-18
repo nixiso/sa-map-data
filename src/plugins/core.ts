@@ -128,4 +128,10 @@ export class PluginManager {
     }
     return sections;
   }
+
+  /** Whether any plugin is currently active, regardless of whether it
+   * contributes panel content. */
+  hasActivePlugin(): boolean {
+    return this.active.size > 0;
+  }
 }

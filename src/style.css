@@ -329,6 +329,40 @@ body {
   width: 45%;
 }
 
+.line-item-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.line-item-table th,
+.line-item-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.line-item-table th {
+  text-align: right;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.line-item-table th:first-child,
+.line-item-table td:first-child {
+  text-align: left;
+}
+
+.line-item-table td {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.line-item-table td:first-child {
+  white-space: normal;
+  color: var(--color-text-muted);
+}
+
 #panel pre {
   margin: 0;
   padding: 0.75rem;
